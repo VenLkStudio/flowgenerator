@@ -4,8 +4,8 @@ import json
 
 def generate_flowchart_json(task_description):
     prompt = f"""
-    Преобразуй следующее описание задачи в JSON для блок-схемы. Не пиши никакое описание и текст, только JSON пожалуйста. Нужно чтобы в блоках не было текста кроме начало и конец. Нужно генерировать так чтобы потом просто можно было это перевести в код. Используй вместо текста например: "Добавить 1" испольхуй "переменная = переменная + 1(вместо слов используй переменные названные латинскими буквами)". После выполнения программа должна заканчиваться. Программа должна идти дальне, а не создавать новые отвлетления(типо без начала). Не создавай лишние ноды пожалуйста.
-    Если нужен вывод то писать "Вывод [тут переменная или текст который попросили]" также работает и для ввода
+    Преобразуй следующее описание задачи в JSON для блок-схемы. Не пиши никакое описание и текст, только JSON пожалуйста. Нужно чтобы в блоках не было текста кроме начало и конец. Нужно генерировать так чтобы потом просто можно было это перевести в код. Используй вместо текста например: "Добавить 1" используй "переменная = переменная + 1(вместо слов используй переменные названные латинскими буквами)". После выполнения программа должна заканчиваться. Программа должна идти дальне, а не создавать новые отвлетления(типо без начала). Не создавай лишние ноды пожалуйста.
+
     Формат JSON:
     {{
         "blocks": [
@@ -81,9 +81,40 @@ def genflow(task, png_name): # ввод: задача, название пнг
     if json_task_gen:
         print("JSON сгенерирован")
         print("создание png")
-        generate_flowchart_png(json_task_gen, png_name)
-        print('сгенерирован')
-        return f'Блок-схема {png_name}.png сгенерирована'
+        return generate_flowchart_png(json_task_gen, png_name)
     else:
         print('не удалось сгенерировать JSON')
         return 'не удалось сгенерировать JSON'
+    
+# эта часть кода для работы api. для запуска использовать команду fastapi run text2flow.py (вместо run использовать dev если файл будет переделываться)
+from typing import Union
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+from starlette.middleware.cors import CORSMiddleware
+import random
+from fastapi import Response
+import io
+from PIL import Image
+
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
+)
+
+@app.get('/genflow/{arguments}', responses={200: {"content": {"image/png": {}}}}, response_class=StreamingResponse)
+def genflow_api(arguments: str, name: Union[str, None] = random.randint(1, 9999)):
+    json_data = generate_flowchart_json(arguments)
+    if json_data is None:
+        return Response(content="Не удалось сгенерировать JSON", media_type="text/plain", status_code=500)
+    
+    generate_flowchart_png(json_data, name)
+
+    try:
+        file_stream = open(f'{name}.png', "rb")
+        return StreamingResponse(
+            file_stream,
+            media_type="image/png",
+            headers={"Content-Disposition": f"inline; filename={name}.png"}
+        )
+    except Exception as e:
+        return Response(content=f"Ошибка при создании PNG: {str(e)}", media_type="text/plain", status_code=500)
