@@ -1,6 +1,8 @@
 import g4f
 import graphviz
 import json
+import pandas as pd
+import random
 
 def generate_flowchart_json(task_description):
     prompt = f"""
@@ -29,7 +31,7 @@ def generate_flowchart_json(task_description):
     """
 
     response = g4f.ChatCompletion.create(
-        model=g4f.models.gpt_4,
+        model=g4f.models.gpt_4o_mini,
         messages=[{"role": "user", "content": prompt}]
     )
     
@@ -86,12 +88,51 @@ def genflow(task, png_name): # ввод: задача, название пнг
         print('не удалось сгенерировать JSON')
         return 'не удалось сгенерировать JSON'
     
+def table_gen(task):
+    prompt = f"""
+    Создай для себя в уме блок схему из задачи которая будет снизу и построй трассировочную таблицу. Пожалуйста не пиши никакого текста, только таблица. Для каждой переменной должен быть отдельный столбик в таблице.
+    Генерируй json файл для создания таблицы на python пр помощи библиотеки pandas.
+    Задача:     
+    {task}
+    """
+    response = g4f.ChatCompletion.create(
+        model=g4f.models.gpt_4o_mini,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    
+    if isinstance(response, str):
+        response_cleaned = response.strip("```").strip() #там в ответе есть '''. эта штука их убирает
+        if response_cleaned.startswith("json"):
+            response_cleaned = response_cleaned[4:].strip()
+        try:
+            return json.loads(response_cleaned)
+        except json.JSONDecodeError as e:
+            print("ошибка декодирования JSON:", e)
+            print("ответ от модели (после очистки):", response_cleaned)
+            return None
+    else:
+        print("неизвестный формат ответа:", response)
+        return None
+
+def gen_excel_table(json_task, name = random.randint(0, 9999)):
+    df = pd.DataFrame(json_task['data'], columns=json_task['columns'])
+    file_name = f"{name}.xlsx"
+    df.to_excel(file_name, index=False)
+    print(f"Таблица сохранена в файл: {name}")
+
+# if __name__ == '__main__':
+#     task = table_gen('Сложить все числа от 1 до 10')
+#     print(task)
+#     gen_excel_table(task, 'test')
+
+
+
+
 # эта часть кода для работы api. для запуска использовать команду fastapi run text2flow.py (вместо run использовать dev если файл будет переделываться)
 from typing import Union
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
-import random
 from fastapi import Response
 import io
 from PIL import Image
@@ -118,3 +159,7 @@ def genflow_api(arguments: str, name: Union[str, None] = random.randint(1, 9999)
         )
     except Exception as e:
         return Response(content=f"Ошибка при создании PNG: {str(e)}", media_type="text/plain", status_code=500)
+    
+@app.get('/gentable/{arguments}')
+def gentable_api(arguments: str):
+    return table_gen(arguments)
